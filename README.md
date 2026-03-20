@@ -12,9 +12,9 @@
 
 ## 📌 Overview
 
-The **Smart Code Review Agent** is an AI-powered code review system built as a multi-agent pipeline using Google's Agent Development Kit (ADK). It accepts any code snippet via HTTP and returns a structured, developer-friendly review — covering bugs, security vulnerabilities, code quality, performance issues, and best practices — along with a quality score out of 100.
+The **Smart Code Review Agent** is an AI-powered code review system built as a multi-agent pipeline using Google's Agent Development Kit (ADK). It accepts any code snippet via a live web UI or HTTP API and returns a structured, developer-friendly review — covering bugs, security vulnerabilities, code quality, performance issues, and best practices — along with a quality score out of 100.
 
-🌐 **Live Demo:** `https://code-review-agent-692228693579.us-central1.run.app`
+🌐 **Live Demo:** https://code-review-agent-692228693579.us-central1.run.app
 
 ---
 
@@ -79,14 +79,16 @@ root_agent (code_review_greeter)
 
 ```
 smart-code-review-agent/
-├── code_review_agent/          ← Agent package
-│   ├── __init__.py             ← Package entry point
-│   ├── agent.py                ← All agent logic (260 lines)
-│   └── .env.example            ← Environment variable template
+├── main.py                     ← FastAPI server (serves UI + ADK routes)
+├── index.html                  ← Frontend web UI
 ├── Dockerfile                  ← Container definition for Cloud Run
 ├── requirements.txt            ← Python dependencies
 ├── .gitignore                  ← Excludes .env and .venv
-└── README.md                   ← This file
+├── README.md                   ← This file
+└── code_review_agent/          ← Agent package
+    ├── __init__.py             ← Package entry point
+    ├── agent.py                ← All agent logic
+    └── .env.example            ← Environment variable template
 ```
 
 ---
@@ -96,8 +98,8 @@ smart-code-review-agent/
 - **[Google ADK](https://google.github.io/adk-docs/)** — Agent Development Kit for building multi-agent workflows
 - **[Gemini 2.5 Flash](https://deepmind.google/technologies/gemini/)** — Google's fast, capable LLM for code analysis
 - **[Google Cloud Run](https://cloud.google.com/run)** — Serverless container deployment
+- **[FastAPI](https://fastapi.tiangolo.com/)** — Web framework serving the UI and ADK routes
 - **[Cloud Build](https://cloud.google.com/build)** — Automated container image building
-- **[Vertex AI](https://cloud.google.com/vertex-ai)** — Unified AI platform API
 - **Python 3.11+** — Core language
 
 ---
@@ -119,20 +121,21 @@ cd smart-code-review-agent
 
 # 2. Create virtual environment
 uv venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 # 3. Install dependencies
 uv pip install -r requirements.txt
+pip install fastapi uvicorn
 
 # 4. Set up environment variables
 cp code_review_agent/.env.example code_review_agent/.env
 # Edit .env and add your GOOGLE_API_KEY
 
 # 5. Run locally
-adk web
+python main.py
 ```
 
-Open http://127.0.0.1:8000 in your browser, select `code_review_agent` and type `hello` to start.
+Open http://127.0.0.1:8080 in your browser to use the web UI.
 
 ---
 
@@ -178,29 +181,10 @@ gcloud run deploy code-review-agent \
 
 ## 🧪 Testing the Live Endpoint
 
-### Step 1 — Create a Session
-```bash
-curl -X POST https://code-review-agent-692228693579.us-central1.run.app/apps/code_review_agent/users/test/sessions \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
+### Via Web UI
+Open https://code-review-agent-692228693579.us-central1.run.app in your browser, paste any code snippet and click **Review Code**.
 
-### Step 2 — Send Code for Review
-```bash
-curl -X POST https://code-review-agent-692228693579.us-central1.run.app/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "app_name": "code_review_agent",
-    "user_id": "test",
-    "session_id": "YOUR_SESSION_ID",
-    "new_message": {
-      "role": "user",
-      "parts": [{"text": "paste your code here"}]
-    }
-  }'
-```
-
-### One-liner Test
+### Via API (one-liner)
 ```bash
 SESSION_ID=$(curl -s -X POST \
   https://code-review-agent-692228693579.us-central1.run.app/apps/code_review_agent/users/test/sessions \

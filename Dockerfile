@@ -4,5 +4,6 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
 ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
-CMD ["adk", "api_server", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "main.py"]

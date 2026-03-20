@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Code Review Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0a0f;
+    --surface:   #111118;
+    --surface2:  #1a1a24;
+    --border:    #2a2a3a;
+    --border2:   #3a3a50;
+    --accent:    #7c6af7;
+    --accent2:   #a594ff;
+    --green:     #34d399;
+    --red:       #f87171;
+    --amber:     #fbbf24;
+    --text:      #e8e6f0;
+    --muted:     #7a788a;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  /* Glow orb */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(124,106,247,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* ── Layout ── */
+  .app {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100vh;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,10,15,0.8);
+    backdrop-filter: blur(12px);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    box-shadow: 0 0 20px rgba(124,106,247,0.4);
+  }
+
+  .logo-text {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .logo-text span {
+    color: var(--accent2);
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    background: rgba(124,106,247,0.15);
+    border: 1px solid rgba(124,106,247,0.3);
+    border-radius: 20px;
+    color: var(--accent2);
+    letter-spacing: 0.5px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .status-text {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── Main ── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* ── Left panel: input ── */
+  .input-panel {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .lang-select {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 4px 10px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .lang-select:hover { border-color: var(--border2); }
+  .lang-select:focus { border-color: var(--accent); }
+
+  .code-area-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .line-numbers {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 44px;
+    padding: 16px 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .line-numbers span {
+    display: block;
+    height: 22px;
+    line-height: 22px;
+    text-align: right;
+    padding-right: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--border2);
+    user-select: none;
+  }
+
+  #code-input {
+    position: absolute;
+    inset: 0;
+    padding: 16px 16px 16px 60px;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 22px;
+    color: var(--text);
+    tab-size: 2;
+    caret-color: var(--accent2);
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  #code-input::placeholder { color: var(--muted); opacity: 0.5; }
+
+  /* Scrollbar */
+  #code-input::-webkit-scrollbar { width: 4px; }
+  #code-input::-webkit-scrollbar-track { background: transparent; }
+  #code-input::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .input-footer {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .char-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .review-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 22px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 0 20px rgba(124,106,247,0.3);
+    letter-spacing: 0.2px;
+  }
+
+  .review-btn:hover {
+    background: var(--accent2);
+    transform: translateY(-1px);
+    box-shadow: 0 0 28px rgba(124,106,247,0.5);
+  }
+
+  .review-btn:active { transform: translateY(0); }
+
+  .review-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-icon { font-size: 14px; }
+
+  /* ── Right panel: output ── */
+  .output-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .output-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 24px 40px;
+  }
+
+  .output-body::-webkit-scrollbar { width: 4px; }
+  .output-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    opacity: 0.4;
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    filter: grayscale(1);
+  }
+
+  .empty-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .empty-sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Loading */
+  .loading-state {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 20px;
+  }
+
+  .loading-state.active { display: flex; }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 2px solid var(--border2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .loading-step {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: all 0.4s;
+  }
+
+  .loading-step.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .loading-step.done { color: var(--green); }
+
+  /* Review result */
+  .review-result {
+    display: none;
+    flex-direction: column;
+    gap: 20px;
+    animation: fadeUp 0.4s ease;
+  }
+
+  .review-result.active { display: flex; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Score card */
+  .score-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .score-ring {
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
+  }
+
+  .score-ring-bg {
+    fill: none;
+    stroke: var(--border2);
+    stroke-width: 6;
+  }
+
+  .score-ring-fill {
+    fill: none;
+    stroke-width: 6;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: stroke-dashoffset 1s ease;
+  }
+
+  .score-ring-text {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 700;
+    fill: var(--text);
+    dominant-baseline: middle;
+    text-anchor: middle;
+  }
+
+  .score-info { flex: 1; }
+
+  .score-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+
+  .score-bar-wrap {
+    height: 6px;
+    background: var(--border2);
+    border-radius: 3px;
+    margin: 8px 0;
+    overflow: hidden;
+  }
+
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s ease;
+    width: 0%;
+  }
+
+  .score-rationale {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* Section */
+  .section {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+
+  .section-head:hover { background: rgba(255,255,255,0.03); }
+
+  .section-icon { font-size: 14px; }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    flex: 1;
+  }
+
+  .section-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  .count-red   { background: rgba(248,113,113,0.15); color: var(--red); }
+  .count-amber { background: rgba(251,191,36,0.15);  color: var(--amber); }
+  .count-green { background: rgba(52,211,153,0.15);  color: var(--green); }
+  .count-muted { background: rgba(122,120,138,0.15); color: var(--muted); }
+
+  .section-chevron {
+    font-size: 10px;
+    color: var(--muted);
+    transition: transform 0.2s;
+  }
+
+  .section.collapsed .section-chevron { transform: rotate(-90deg); }
+  .section.collapsed .section-body { display: none; }
+
+  .section-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Issue item */
+  .issue {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    border-left-width: 3px;
+  }
+
+  .issue.high   { border-left-color: var(--red); }
+  .issue.medium { border-left-color: var(--amber); }
+  .issue.low    { border-left-color: var(--green); }
+  .issue.info   { border-left-color: var(--accent); }
+
+  .issue-sev {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    align-self: start;
+    margin-top: 2px;
+  }
+
+  .sev-HIGH   { background: rgba(248,113,113,0.2); color: var(--red); }
+  .sev-MEDIUM { background: rgba(251,191,36,0.2);  color: var(--amber); }
+  .sev-LOW    { background: rgba(52,211,153,0.2);  color: var(--green); }
+  .sev-INFO   { background: rgba(124,106,247,0.2); color: var(--accent2); }
+
+  .issue-content { min-width: 0; }
+
+  .issue-desc {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .issue-fix {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent2);
+    opacity: 0.8;
+  }
+
+  /* Recommendations */
+  .rec-item {
+    display: flex;
+    gap: 12px;
+    padding: 10px 12px;
+    background: rgba(124,106,247,0.05);
+    border: 1px solid rgba(124,106,247,0.2);
+    border-radius: 8px;
+  }
+
+  .rec-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent2);
+    min-width: 18px;
+  }
+
+  .rec-text {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  /* Raw response fallback */
+  .raw-response {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Error */
+  .error-banner {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: rgba(248,113,113,0.1);
+    border: 1px solid rgba(248,113,113,0.3);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--red);
+    margin-bottom: 16px;
+  }
+
+  .error-banner.active { display: flex; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    .input-panel { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⚡</div>
+      <div class="logo-text">Code<span>Review</span> Agent</div>
+      <div class="badge">GEMINI 2.5 FLASH</div>
+    </div>
+    <div class="header-right">
+      <div class="status-dot"></div>
+      <div class="status-text" id="status-text">LIVE ON CLOUD RUN</div>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Left: Input -->
+    <div class="input-panel">
+      <div class="panel-header">
+        <span class="panel-title">// paste your code</span>
+        <select class="lang-select" id="lang-select">
+          <option value="auto">Auto-detect</option>
+          <option value="python">Python</option>
+          <option value="javascript">JavaScript</option>
+          <option value="typescript">TypeScript</option>
+          <option value="java">Java</option>
+          <option value="go">Go</option>
+          <option value="rust">Rust</option>
+          <option value="cpp">C++</option>
+        </select>
+      </div>
+
+      <div class="code-area-wrap">
+        <div class="line-numbers" id="line-numbers">
+          <span>1</span>
+        </div>
+        <textarea
+          id="code-input"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="# Paste any code snippet here...&#10;# The agent will review it for bugs,&#10;# security issues, and code quality."
+        ></textarea>
+      </div>
+
+      <div class="input-footer">
+        <span class="char-count" id="char-count">0 lines</span>
+        <button class="review-btn" id="review-btn" onclick="startReview()">
+          <span class="btn-icon">▶</span>
+          Review Code
+        </button>
+      </div>
+    </div>
+
+    <!-- Right: Output -->
+    <div class="output-panel">
+      <div class="panel-header">
+        <span class="panel-title">// review output</span>
+        <span class="badge" id="output-badge" style="display:none">ADK · SEQUENTIAL AGENT</span>
+      </div>
+
+      <div class="output-body" id="output-body">
+
+        <!-- Empty state -->
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">🔍</div>
+          <div class="empty-title">No review yet</div>
+          <div class="empty-sub">Paste code → click Review</div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading-state" id="loading-state">
+          <div class="spinner"></div>
+          <div class="loading-steps">
+            <div class="loading-step" id="step-1">⬡ Connecting to agent...</div>
+            <div class="loading-step" id="step-2">⬡ Running static checks...</div>
+            <div class="loading-step" id="step-3">⬡ Gemini analysing code...</div>
+            <div class="loading-step" id="step-4">⬡ Formatting report...</div>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div class="error-banner" id="error-banner">
+          ⚠ <span id="error-msg"></span>
+        </div>
+
+        <!-- Result -->
+        <div class="review-result" id="review-result"></div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = window.location.origin;  // same origin — Cloud Run serves both UI and API
+
+// Line numbers
+const codeInput = document.getElementById('code-input');
+const lineNumbers = document.getElementById('line-numbers');
+const charCount = document.getElementById('char-count');
+
+function updateLineNumbers() {
+  const lines = codeInput.value.split('\n');
+  lineNumbers.innerHTML = lines.map((_, i) => `<span>${i + 1}</span>`).join('');
+  charCount.textContent = `${lines.length} line${lines.length !== 1 ? 's' : ''}`;
+  lineNumbers.scrollTop = codeInput.scrollTop;
+}
+
+codeInput.addEventListener('input', updateLineNumbers);
+codeInput.addEventListener('scroll', () => { lineNumbers.scrollTop = codeInput.scrollTop; });
+codeInput.addEventListener('keydown', e => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = codeInput.selectionStart;
+    codeInput.value = codeInput.value.substring(0, s) + '  ' + codeInput.value.substring(s);
+    codeInput.selectionStart = codeInput.selectionEnd = s + 2;
+    updateLineNumbers();
+  }
+});
+
+// Loading steps animation
+function animateSteps() {
+  const steps = ['step-1','step-2','step-3','step-4'];
+  const delays = [0, 800, 1800, 3200];
+  steps.forEach((id, i) => {
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      el.classList.add('visible');
+      if (i > 0) {
+        document.getElementById(steps[i-1]).classList.add('done');
+        document.getElementById(steps[i-1]).textContent =
+          document.getElementById(steps[i-1]).textContent.replace('⬡','✓');
+      }
+    }, delays[i]);
+  });
+}
+
+function show(id) { document.getElementById(id).style.display = ''; }
+function hide(id) { document.getElementById(id).style.display = 'none'; }
+function addClass(id, cls) { document.getElementById(id).classList.add(cls); }
+function removeClass(id, cls) { document.getElementById(id).classList.remove(cls); }
+
+// Score color
+function scoreColor(s) {
+  if (s >= 80) return 'var(--green)';
+  if (s >= 50) return 'var(--amber)';
+  return 'var(--red)';
+}
+
+// Parse and render review
+function renderReview(text) {
+  const container = document.getElementById('review-result');
+  container.innerHTML = '';
+
+  // Try to extract score
+  const scoreMatch = text.match(/(\d{1,3})\s*\/\s*100/);
+  const score = scoreMatch ? parseInt(scoreMatch[1]) : null;
+
+  if (score !== null) {
+    const circumference = 2 * Math.PI * 28;
+    const offset = circumference - (score / 100) * circumference;
+    const color = scoreColor(score);
+
+    const scoreCard = document.createElement('div');
+    scoreCard.className = 'score-card';
+    scoreCard.innerHTML = `
+      <svg class="score-ring" viewBox="0 0 64 64">
+        <circle class="score-ring-bg" cx="32" cy="32" r="28"/>
+        <circle class="score-ring-fill" cx="32" cy="32" r="28"
+          stroke="${color}"
+          stroke-dasharray="${circumference}"
+          stroke-dashoffset="${circumference}"
+          id="ring-fill"/>
+        <text class="score-ring-text" x="32" y="32">${score}</text>
+      </svg>
+      <div class="score-info">
+        <div class="score-label">Quality Score</div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-fill" id="score-bar" style="background:${color}"></div>
+        </div>
+        <div class="score-rationale" id="score-rationale">Analysing...</div>
+      </div>
+    `;
+    container.appendChild(scoreCard);
+
+    setTimeout(() => {
+      const fill = document.getElementById('ring-fill');
+      if (fill) fill.style.strokeDashoffset = offset;
+      const bar = document.getElementById('score-bar');
+      if (bar) bar.style.width = score + '%';
+    }, 100);
+
+    // Extract rationale sentence after score
+    const rationaleMatch = text.match(/\d+\/100\s*\n?([^\n.]+\.)/);
+    if (rationaleMatch) {
+      const rat = document.getElementById('score-rationale');
+      if (rat) rat.textContent = rationaleMatch[1].trim();
+    }
+  }
+
+  // Sections to parse
+  const sections = [
+    { key: 'bugs',         icon: '🐛', title: 'Bugs & Logic Errors',    patterns: [/bugs?/i, /logic error/i] },
+    { key: 'security',     icon: '🔒', title: 'Security Issues',         patterns: [/security/i] },
+    { key: 'quality',      icon: '🧹', title: 'Code Quality',            patterns: [/quality/i, /maintainab/i] },
+    { key: 'performance',  icon: '⚡', title: 'Performance',             patterns: [/performance/i] },
+    { key: 'best',         icon: '✅', title: 'Best Practices',          patterns: [/best practice/i] },
+    { key: 'recs',         icon: '💡', title: 'Top Recommendations',     patterns: [/recommendation/i, /top \d/i] },
+  ];
+
+  // Split text into lines for parsing
+  const lines = text.split('\n');
+  let currentSection = null;
+  const sectionContent = {};
+  sections.forEach(s => { sectionContent[s.key] = []; });
+
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    // Detect section header
+    const matched = sections.find(s => s.patterns.some(p => p.test(trimmed)) && (trimmed.startsWith('#') || trimmed.startsWith('##') || trimmed.startsWith('**')));
+    if (matched) { currentSection = matched.key; return; }
+
+    if (currentSection) {
+      sectionContent[currentSection].push(trimmed.replace(/^[-*•]\s*/, ''));
+    }
+  });
+
+  // Render each section
+  sections.forEach(sec => {
+    const items = sectionContent[sec.key];
+    const sectionEl = document.createElement('div');
+    sectionEl.className = 'section';
+
+    const countClass = sec.key === 'recs' || sec.key === 'best' ? 'count-green' :
+                       items.length === 0 ? 'count-muted' :
+                       items.length <= 1 ? 'count-amber' : 'count-red';
+
+    sectionEl.innerHTML = `
+      <div class="section-head" onclick="this.parentElement.classList.toggle('collapsed')">
+        <span class="section-icon">${sec.icon}</span>
+        <span class="section-title">${sec.title}</span>
+        <span class="section-count ${countClass}">${items.length}</span>
+        <span class="section-chevron">▼</span>
+      </div>
+      <div class="section-body" id="sec-${sec.key}"></div>
+    `;
+    container.appendChild(sectionEl);
+
+    const body = sectionEl.querySelector('.section-body');
+
+    if (items.length === 0) {
+      body.innerHTML = `<div style="font-size:12px;color:var(--green)">✓ No issues found</div>`;
+    } else if (sec.key === 'recs') {
+      items.slice(0, 5).forEach((item, i) => {
+        const el = document.createElement('div');
+        el.className = 'rec-item';
+        el.innerHTML = `<span class="rec-num">${i + 1}.</span><span class="rec-text">${item}</span>`;
+        body.appendChild(el);
+      });
+    } else {
+      items.forEach(item => {
+        const sevMatch = item.match(/\b(HIGH|MEDIUM|LOW)\b/i);
+        const sev = sevMatch ? sevMatch[1].toUpperCase() : 'INFO';
+        const el = document.createElement('div');
+        el.className = `issue ${sev.toLowerCase()}`;
+        const clean = item.replace(/\b(HIGH|MEDIUM|LOW)\b/gi, '').replace(/^\||\|$/g, '').trim();
+        const fixMatch = clean.match(/Fix[:\s]+(.+)/i);
+        const desc = fixMatch ? clean.replace(fixMatch[0], '').trim() : clean;
+        const fix = fixMatch ? fixMatch[1] : '';
+        el.innerHTML = `
+          <span class="issue-sev sev-${sev}">${sev}</span>
+          <div class="issue-content">
+            <div class="issue-desc">${desc}</div>
+            ${fix ? `<div class="issue-fix">→ ${fix}</div>` : ''}
+          </div>
+        `;
+        body.appendChild(el);
+      });
+    }
+  });
+
+  // If nothing was parsed into sections, show raw
+  if (Object.values(sectionContent).every(v => v.length === 0)) {
+    container.innerHTML = `<div class="raw-response">${text}</div>`;
+  }
+}
+
+// Main review function
+async function startReview() {
+  const code = codeInput.value.trim();
+  if (!code) { codeInput.focus(); return; }
+
+  const lang = document.getElementById('lang-select').value;
+  const btn = document.getElementById('review-btn');
+
+  // UI state: loading
+  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-icon">⏳</span> Reviewing...';
+  addClass('loading-state', 'active');
+  removeClass('review-result', 'active');
+  removeClass('error-banner', 'active');
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('output-badge').style.display = '';
+
+  // Reset steps
+  ['step-1','step-2','step-3','step-4'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.remove('visible','done');
+    el.textContent = el.textContent.replace('✓','⬡');
+  });
+  animateSteps();
+
+  try {
+    // Step 1: create session
+    const userId = `user_${Date.now()}`;
+    const sessionRes = await fetch(`${API_BASE}/apps/code_review_agent/users/${userId}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+
+    if (!sessionRes.ok) throw new Error(`Session creation failed (${sessionRes.status})`);
+    const session = await sessionRes.json();
+    const sessionId = session.id;
+
+    // Step 2: greet
+    await fetch(`${API_BASE}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_name: 'code_review_agent',
+        user_id: userId,
+        session_id: sessionId,
+        new_message: { role: 'user', parts: [{ text: 'hello' }] }
+      })
+    });
+
+    // Step 3: send code
+    const reviewRes = await fetch(`${API_BASE}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_name: 'code_review_agent',
+        user_id: userId,
+        session_id: sessionId,
+        new_message: {
+          role: 'user',
+          parts: [{ text: `Language: ${lang}\n\n${code}` }]
+        }
+      })
+    });
+
+    if (!reviewRes.ok) throw new Error(`Review failed (${reviewRes.status})`);
+    const reviewData = await reviewRes.json();
+
+    // Extract report_writer text
+    let reviewText = '';
+    if (Array.isArray(reviewData)) {
+      for (const item of reviewData) {
+        if (item.author === 'report_writer' || item.author === 'code_analyser') {
+          const parts = item?.content?.parts || [];
+          for (const p of parts) {
+            if (p.text) { reviewText += p.text + '\n'; }
+          }
+        }
+      }
+      // Fallback: any text
+      if (!reviewText) {
+        for (const item of reviewData) {
+          const parts = item?.content?.parts || [];
+          for (const p of parts) { if (p.text) reviewText += p.text + '\n'; }
+        }
+      }
+    }
+
+    if (!reviewText) throw new Error('No review text in response');
+
+    // Render
+    removeClass('loading-state', 'active');
+    renderReview(reviewText);
+    addClass('review-result', 'active');
+
+  } catch (err) {
+    removeClass('loading-state', 'active');
+    document.getElementById('error-msg').textContent = err.message;
+    addClass('error-banner', 'active');
+    document.getElementById('empty-state').style.display = '';
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">▶</span> Review Code';
+  }
+}
+
+// Ctrl+Enter shortcut
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') startReview();
+});
+
+updateLineNumbers();
+</script>
+</body>
+</html>

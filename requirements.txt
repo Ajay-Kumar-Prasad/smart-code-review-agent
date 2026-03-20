@@ -1,3 +1,5 @@
 google-adk==1.14.0
 google-cloud-logging
 python-dotenv
+uvicorn
+fastapi
